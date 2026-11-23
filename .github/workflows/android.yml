@@ -34,13 +34,27 @@ jobs:
           cp -r icons android/app/src/main/assets/www/
 
       - name: 還原簽章金鑰
+        id: key
         env:
           KS: ${{ secrets.KEYSTORE_B64 }}
         run: |
-          if [ -z "$KS" ]; then echo "::error::請到 Settings → Secrets and variables → Actions 新增 KEYSTORE_B64 和 KEYSTORE_PASS"; exit 1; fi
-          echo "$KS" | base64 -d > android/app/release.jks
+          if [ -z "$KS" ]; then
+            echo "::warning::還沒設定 KEYSTORE_B64 / KEYSTORE_PASS，這次只做編譯檢查，不會發佈 APK"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$KS" | base64 -d > android/app/release.jks
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 編譯檢查（未設定金鑰時）
+        if: steps.key.outputs.ok != 'true'
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: 打包 APK
+        if: steps.key.outputs.ok == 'true'
         working-directory: android
         env:
           VERSION_CODE: ${{ github.run_number }}
@@ -49,9 +63,11 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: 整理檔案
+        if: steps.key.outputs.ok == 'true'
         run: cp android/app/build/outputs/apk/release/app-release.apk jizhang.apk
 
       - name: 發佈到 Releases
+        if: steps.key.outputs.ok == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
